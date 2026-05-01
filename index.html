@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>🧹 Wohnung aufräumen</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f5f5f5;
+      padding: 18px;
+      max-width: 600px;
+      margin: auto;
+    }
+    h1 { font-size: 1.4em; margin: 6px 0 10px; }
+    .card { background:#fff; border-radius:12px; padding:12px; margin:10px 0; }
+    .row { display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap; }
+    .status { font-size:0.95em; color:#333; }
+    .muted { color:#666; font-size:0.9em; }
+    progress { width:100%; height:16px; margin-top:8px; }
+    button, select, input[type="text"] { font-size: 1em; border-radius: 10px; }
+    button { padding:10px 12px; border:none; background:#e6e6e6; cursor:pointer; }
+    button:active { transform: translateY(1px); }
+    .btn-primary { background:#dfefff; }
+    .btn-danger { background:#ffe1e1; }
+    .btn-ghost { background:#f0f0f0; }
+
+    /* Collapsible rooms */
+    details.room { background:#fff; border-radius:12px; margin:10px 0; overflow:hidden; }
+    details.room > summary {
+      list-style:none; cursor:pointer; padding:12px; user-select:none;
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      border-bottom:1px solid #eee;
+    }
+    details.room > summary::-webkit-details-marker { display:none; }
+    .summary-left { display:flex; align-items:center; gap:10px; min-width:0; }
+    .room-title { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .summary-right { display:flex; align-items:center; gap:10px; font-size:0.95em; color:#333; }
+    .chev {
+      width:10px; height:10px; border-right:2px solid #666; border-bottom:2px solid #666;
+      transform: rotate(-45deg); transition: transform 0.15s ease; margin-left:6px;
+    }
+    details[open] .chev { transform: rotate(45deg); }
+    .room-body { padding:12px; }
+
+    ul { list-style:none; padding:0; margin:10px 0 0; }
+    li.task {
+      margin:8px 0; padding:10px 12px; border-radius:10px;
+      display:flex; align-items:center; border:1px solid #eee; gap:10px;
+    }
+    label.taskLabel {
+      display:flex; align-items:center; gap:12px; width:100%;
+      cursor:pointer; user-select:none;
+    }
+    input[type="checkbox"] { width:22px; height:22px; flex:0 0 auto; }
+    .taskText { flex:1 1 auto; }
+    .taskBtns { display:none; gap:8px; flex:0 0 auto; }
+    .editMode .taskBtns { display:flex; }
+
+    .room-actions { display:flex; gap:10px; margin-top:12px; }
+    .room-actions button { width:100%; font-size:0.95em; }
+
+    .editor { display:grid; grid-template-columns:1fr; gap:10px; margin-top:10px; }
+    .editorRow { display:grid; grid-template-columns:1fr 1.1fr auto; gap:10px; align-items:center; }
+    select, input[type="text"] { padding:10px 12px; border:1px solid #ddd; background:#fff; width:100%; }
+    @media (max-width: 480px) { .editorRow { grid-template-columns:1fr; } .editorRow button { width:100%; } }
+
+    .pill {
+      display:inline-flex; align-items:center; gap:8px;
+      padding:6px 10px; border-radius:999px; background:#f3f3f3;
+      font-size:0.9em;
+    }
+    .warn { background:#fff3cd; }
+    .ok { background:#e8fff0; }
+  </style>
+</head>
+
+<body>
+  <h1>🧹 Wohnung aufräumen</h1>
+
+  <div class="card" id="topCard">
+    <div class="row">
+      <div class="status">🔥 Streak: <span id="streak">0</span> Tage</div>
+      <div class="status">🏠 Gesamt: <span id="globalDone">0</span> von <span id="globalMax">0</span></div>
+    </div>
+    <progress id="globalBar" value="0"></progress>
+
+    <div class="row" style="margin-top:10px;">
+      <span id="syncPill" class="pill warn">🔌 Nicht verbunden</span>
+      <span class="pill">🗓️ Tages‑Reset: Häkchen werden täglich zurückgesetzt</span>
+    </div>
+
+    <div class="row" style="margin-top:12px;">
+      <button id="connectBtn" class="btn-primary" type="button">🔗 JSON-Datei verbinden</button>
+      <button id="reloadBtn" type="button">↻ Neu laden</button>
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <button id="toggleEdit" class="btn-primary" type="button">✍️ Bearbeiten: AUS</button>
+      <button id="resetAll" type="button">🔄 Alles zurücksetzen</button>
+    </div>
+
+    <div class="editor" id="editor" style="display:none;">
+      <div class="status">➕ Aufgabe hinzufügen</div>
+      <div class="editorRow">
+        <select id="roomSelect" aria-label="Raum auswählen"></select>
+        <input id="newTaskText" type="text" placeholder="z.B. Fernbedienung einsortieren" />
+        <button id="addTaskBtn" class="btn-primary" type="button">Hinzufügen</button>
+      </div>
+      <div class="muted">
+        Hinweis: Datei-Zugriff erfordert meist HTTPS oder http://localhost (“secure context”). [2](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access)[3](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API)
+      </div>
+    </div>
+
+    <div class="muted" style="margin-top:10px;">
+      Letzter Speichervorgang: <span id="lastSave">—</span>
+    </div>
+  </div>
+
+  <div id="roomsContainer"></div>
+
+  <script>
+    /* ===========================
+       1) Datenmodell (JSON-Datei)
+       =========================== */
+
+    const DATA_VERSION = 1;
+    const DEFAULT_ROOMS = [
+      { id: "wohnzimmer", name: "🛋️ Wohnzimmer" },
+      { id: "kueche", name: "🍽️ Küche" },
+      { id: "schlafzimmer", name: "🛏️ Schlafzimmer" },
+      { id: "bad", name: "🚿 Badezimmer" },
+      { id: "flur", name: "🚪 Flur" }
+    ];
+
+    const DEFAULT_TASKS = [
+      { id:"wohnzimmer_tasse", room:"wohnzimmer", text:"Eine Tasse wegtragen", done:false },
+      { id:"wohnzimmer_boden_1", room:"wohnzimmer", text:"Einen Gegenstand vom Boden aufheben", done:false },
+      { id:"wohnzimmer_flaeche", room:"wohnzimmer", text:"Fläche mit der Hand freiwischen", done:false },
+
+      { id:"kueche_teller", room:"kueche", text:"Einen Teller in Spülmaschine/Spüle", done:false },
+      { id:"kueche_arbeitsflaeche", room:"kueche", text:"Einen Gegenstand von der Arbeitsfläche entfernen", done:false },
+      { id:"kueche_muell", room:"kueche", text:"Einen Müllgegenstand bewusst wegwerfen", done:false },
+
+      { id:"schlafzimmer_bett", room:"schlafzimmer", text:"Bettdecke geradeziehen", done:false },
+      { id:"schlafzimmer_kleidung", room:"schlafzimmer", text:"Ein Kleidungsstück aufheben", done:false },
+      { id:"schlafzimmer_nachttisch", room:"schlafzimmer", text:"Einen Gegenstand vom Nachttisch wegräumen", done:false },
+
+      { id:"bad_waschbecken", room:"bad", text:"Einen Gegenstand am Waschbecken wegräumen", done:false },
+      { id:"bad_flaeche", room:"bad", text:"Kurz mit Wasser drübergehen", done:false },
+      { id:"bad_boden", room:"bad", text:"Einen sichtbaren Gegenstand vom Boden aufheben", done:false },
+
+      { id:"flur_schuhe", room:"flur", text:"Ein Paar Schuhe ordentlich hinstellen", done:false },
+      { id:"flur_jacke", room:"flur", text:"Eine Jacke aufhängen", done:false },
+      { id:"flur_kram", room:"flur", text:"Einen Gegenstand aus dem Flur wegräumen", done:false }
+    ];
+
+    function makeEmptyData() {
+      return {
+        version: DATA_VERSION,
+        lastModified: new Date(0).toISOString(),
+        checklistLastResetDate: null,
+        streak: { current: 0, lastDay: null },
+        rooms: DEFAULT_ROOMS,
+        tasks: [],
+        ui: { openRooms: ["wohnzimmer"] } // Start: Wohnzimmer offen
+      };
+    }
+
+    /* ============================================
+       2) File System Access: Handle in IndexedDB
+       ============================================ */
+
+    // Laut Chrome Dev: showOpenFilePicker() benötigt secure context + user gesture. [2](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access)
+    // Laut Chrome Dev & MDN: Handles sind serialisierbar und können in IndexedDB gespeichert werden. [2](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access)[3](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API)
+
+    const DB_NAME = "aufraeumen_handle_db";
+    const DB_STORE = "handles";
+    const DB_KEY = "main_json_handle";
+
+    function idbOpen() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function idbSet(key, value) {
+      const db = await idbOpen();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readwrite");
+        tx.objectStore(DB_STORE).put(value, key);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function idbGet(key) {
+      const db = await idbOpen();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readonly");
+        const req = tx.objectStore(DB_STORE).get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function idbDel(key) {
+      const db = await idbOpen();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readwrite");
+        tx.objectStore(DB_STORE).delete(key);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function verifyPermission(handle, readWrite) {
+      // Empfehlung: queryPermission / requestPermission prüfen. [2](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access)
+      const opts = readWrite ? { mode: "readwrite" } : {};
+      if (handle.queryPermission && (await handle.queryPermission(opts)) === "granted") return true;
+      if (handle.requestPermission && (await handle.requestPermission(opts)) === "granted") return true;
+      return false;
+    }
+
+    function fsSupported() {
+      return ("showOpenFilePicker" in window) && ("showSaveFilePicker" in window || true);
+    }
+
+    let fileHandle = null;     // FileSystemFileHandle für aufraeumen.json
+    let data = makeEmptyData(); // in-memory
+    let editMode = false;
+    let saveTimer = null;
+
+    /* ======================
+       3) UI-Elemente
+       ====================== */
+
+    const roomsContainer = document.getElementById("roomsContainer");
+    const streakEl = document.getElementById("streak");
+    const globalDoneEl = document.getElementById("globalDone");
+    const globalMaxEl = document.getElementById("globalMax");
+    const globalBar = document.getElementById("globalBar");
+    const syncPill = document.getElementById("syncPill");
+    const lastSaveEl = document.getElementById("lastSave");
+
+    const connectBtn = document.getElementById("connectBtn");
+    const reloadBtn = document.getElementById("reloadBtn");
+    const toggleEditBtn = document.getElementById("toggleEdit");
+    const editor = document.getElementById("editor");
+    const roomSelect = document.getElementById("roomSelect");
+    const newTaskText = document.getElementById("newTaskText");
+    const addTaskBtn = document.getElementById("addTaskBtn");
+    const resetAllBtn = document.getElementById("resetAll");
+
+    function heute() { return new Date().toISOString().slice(0, 10); }
+    function gesternString() {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function setPill(text, kind) {
+      syncPill.textContent = text;
+      syncPill.classList.remove("ok", "warn");
+      syncPill.classList.add(kind);
+    }
+
+    function renderRoomSelect() {
+      roomSelect.innerHTML = "";
+      (data.rooms || DEFAULT_ROOMS).forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r.id;
+        opt.textContent = r.name;
+        roomSelect.appendChild(opt);
+      });
+    }
+
+    function generateId(roomId) {
+      return `${roomId}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    }
+
+    /* ======================
+       4) Datei lesen/schreiben
+       ====================== */
+
+    async function loadFromFile() {
+      if (!fileHandle) throw new Error("Kein Datei-Handle verbunden.");
+      const ok = await verifyPermission(fileHandle, true);
+      if (!ok) throw new Error("Keine Berechtigung zum Lesen/Schreiben der Datei.");
+
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      // Minimaler Sanity-Check
+      if (!parsed || typeof parsed !== "object") throw new Error("JSON ist ungültig.");
+      if (!parsed.tasks) parsed.tasks = [];
+      if (!parsed.rooms) parsed.rooms = DEFAULT_ROOMS;
+      if (!parsed.streak) parsed.streak = { current: 0, lastDay: null };
+      if (!parsed.ui) parsed.ui = { openRooms: ["wohnzimmer"] };
+      if (!parsed.version) parsed.version = DATA_VERSION;
+
+      data = parsed;
+
+      // Falls die Datei frisch ist (tasks leer), initialisieren wir mit Default-Aufgaben
+      if (Array.isArray(data.tasks) && data.tasks.length === 0) {
+        data.tasks = structuredClone(DEFAULT_TASKS);
+        data.lastModified = new Date().toISOString();
+        await saveToFile(true); // sofort speichern
+      }
+
+      applyDailyResetIfNeeded();
+      renderRoomSelect();
+      renderAll();
+    }
+
+    async function saveToFile(force = false) {
+      if (!fileHandle) return;
+
+      const ok = await verifyPermission(fileHandle, true);
+      if (!ok) {
+        setPill("⚠️ Keine Schreibrechte (bitte neu verbinden)", "warn");
+        return;
+      }
+
+      // lastModified in JSON pflegen
+      data.lastModified = new Date().toISOString();
+
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(data, null, 2));
+      await writable.close();
+
+      lastSaveEl.textContent = new Date().toLocaleString();
+      if (force) setPill(`✅ Verbunden: ${fileHandle.name}`, "ok");
+    }
+
+    function scheduleSave() {
+      if (!fileHandle) return;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => saveToFile(false).catch(() => {}), 350);
+    }
+
+    /* ======================
+       5) Tages-Reset + Streak
+       ====================== */
+
+    function applyDailyResetIfNeeded() {
+      const h = heute();
+      if (data.checklistLastResetDate !== h) {
+        // Tages-Reset betrifft nur done-Status
+        (data.tasks || []).forEach(t => t.done = false);
+        data.checklistLastResetDate = h;
+        scheduleSave();
+      }
+    }
+
+    function maybeUpdateStreakOnCheck(checkedNow) {
+      if (!checkedNow) return;
+
+      const h = heute();
+      const last = data.streak?.lastDay;
+
+      if (!last) {
+        data.streak = { current: 1, lastDay: h };
+      } else if (last === h) {
+        // schon gezählt
+      } else if (last === gesternString()) {
+        data.streak.current = (data.streak.current || 0) + 1;
+        data.streak.lastDay = h;
+      } else {
+        data.streak.current = 1;
+        data.streak.lastDay = h;
+      }
+      scheduleSave();
+    }
+
+    /* ======================
+       6) Render: Räume & Tasks
+       ====================== */
+
+    function updateTop() {
+      const max = (data.tasks || []).length;
+      const done = (data.tasks || []).filter(t => t.done).length;
+
+      globalDoneEl.textContent = done;
+      globalMaxEl.textContent = max;
+      globalBar.max = Math.max(1, max);
+      globalBar.value = done;
+
+      streakEl.textContent = data.streak?.current ?? 0;
+
+      document.body.classList.toggle("editMode", editMode);
+      toggleEditBtn.textContent = editMode ? "✍️ Bearbeiten: AN" : "✍️ Bearbeiten: AUS";
+      editor.style.display = editMode ? "block" : "none";
+    }
+
+    function renderAll() {
+      updateTop();
+      roomsContainer.innerHTML = "";
+
+      const rooms = data.rooms || DEFAULT_ROOMS;
+      const openRooms = new Set((data.ui && data.ui.openRooms) ? data.ui.openRooms : ["wohnzimmer"]);
+
+      rooms.forEach((room, idx) => {
+        const roomTasks = (data.tasks || []).filter(t => t.room === room.id);
+        const max = roomTasks.length;
+        const done = roomTasks.filter(t => t.done).length;
+
+        const details = document.createElement("details");
+        details.className = "room";
+        details.dataset.room = room.id;
+        details.open = openRooms.has(room.id) || (idx === 0 && openRooms.size === 0);
+
+        details.addEventListener("toggle", () => {
+          const set = new Set(data.ui?.openRooms || []);
+          if (details.open) set.add(room.id); else set.delete(room.id);
+          data.ui = data.ui || {};
+          data.ui.openRooms = [...set];
+          scheduleSave();
+        });
+
+        const summary = document.createElement("summary");
+        summary.innerHTML = `
+          <div class="summary-left">
+            <span class="room-title">${room.name}</span>
+          </div>
+          <div class="summary-right">
+            <span><span class="roomDone">${done}</span>/<span class="roomMax">${max}</span></span>
+            <span class="chev" aria-hidden="true"></span>
+          </div>
+        `;
+
+        const body = document.createElement("div");
+        body.className = "room-body";
+
+        const bar = document.createElement("progress");
+        bar.className = "roomBar";
+        bar.max = Math.max(1, max);
+        bar.value = done;
+
+        const ul = document.createElement("ul");
+
+        roomTasks.forEach(task => {
+          const li = document.createElement("li");
+          li.className = "task";
+          li.dataset.taskId = task.id;
+
+          const label = document.createElement("label");
+          label.className = "taskLabel";
+
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = !!task.done;
+          cb.addEventListener("change", () => {
+            task.done = cb.checked;
+            maybeUpdateStreakOnCheck(cb.checked);
+            scheduleSave();
+            renderAll();
+          });
+
+          const textSpan = document.createElement("span");
+          textSpan.className = "taskText";
+          textSpan.textContent = task.text;
+
+          label.appendChild(cb);
+          label.appendChild(textSpan);
+
+          const btns = document.createElement("div");
+          btns.className = "taskBtns";
+
+          const editBtn = document.createElement("button");
+          editBtn.type = "button";
+          editBtn.className = "btn-ghost";
+          editBtn.textContent = "✏️";
+          editBtn.title = "Aufgabe umschreiben";
+          editBtn.addEventListener("click", (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const neu = prompt("Aufgabe umschreiben:", task.text);
+            if (neu === null) return;
+            const trimmed = neu.trim();
+            if (!trimmed) return;
+            task.text = trimmed;
+            scheduleSave();
+            renderAll();
+          });
+
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "btn-danger";
+          delBtn.textContent = "🗑️";
+          delBtn.title = "Aufgabe löschen";
+          delBtn.addEventListener("click", (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const ok = confirm("Diese Aufgabe wirklich löschen?");
+            if (!ok) return;
+            data.tasks = (data.tasks || []).filter(t => t.id !== task.id);
+            scheduleSave();
+            renderAll();
+          });
+
+          btns.appendChild(editBtn);
+          btns.appendChild(delBtn);
+
+          li.appendChild(label);
+          li.appendChild(btns);
+          ul.appendChild(li);
+        });
+
+        const actions = document.createElement("div");
+        actions.className = "room-actions";
+
+        const roomReset = document.createElement("button");
+        roomReset.type = "button";
+        roomReset.className = "btn-ghost";
+        roomReset.textContent = `🔄 Nur ${room.name.replace(/^.+?\s/, "")} zurücksetzen`;
+        roomReset.addEventListener("click", (e) => {
+          e.preventDefault(); e.stopPropagation();
+          (data.tasks || []).forEach(t => { if (t.room === room.id) t.done = false; });
+          scheduleSave();
+          renderAll();
+        });
+
+        actions.appendChild(roomReset);
+
+        body.appendChild(bar);
+        body.appendChild(ul);
+        body.appendChild(actions);
+
+        details.appendChild(summary);
+        details.appendChild(body);
+
+        roomsContainer.appendChild(details);
+      });
+
+      updateTop();
+    }
+
+    /* ======================
+       7) Aktionen / Buttons
+       ====================== */
+
+    connectBtn.addEventListener("click", async () => {
+      try {
+        if (!fsSupported()) {
+          setPill("⚠️ Datei-API nicht verfügbar (nutze Chrome/Edge + HTTPS/localhost)", "warn");
+          alert("Dein Browser/Modus unterstützt den direkten Dateizugriff evtl. nicht.\n\nTipps:\n- Öffne die App über HTTPS oder http://localhost\n- Nutze einen Chromium-Browser (Chrome/Edge)\n\nDann erneut versuchen.");
+          return;
+        }
+
+        // File picker muss aus User-Geste passieren. [2](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access)
+        const [handle] = await window.showOpenFilePicker({
+          multiple: false,
+          types: [{ description: "Aufräumen Daten (JSON)", accept: { "application/json": [".json"] } }]
+        });
+
+        const ok = await verifyPermission(handle, true);
+        if (!ok) throw new Error("Berechtigung abgelehnt.");
+
+        fileHandle = handle;
+        await idbSet(DB_KEY, fileHandle); // Handle in IndexedDB speichern. [2](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access)[3](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API)
+        setPill(`✅ Verbunden: ${fileHandle.name}`, "ok");
+        lastSaveEl.textContent = "—";
+
+        await loadFromFile();
+      } catch (e) {
+        console.error(e);
+        setPill("⚠️ Verbindung abgebrochen", "warn");
+      }
+    });
+
+    reloadBtn.addEventListener("click", async () => {
+      try {
+        if (!fileHandle) { alert("Noch keine JSON-Datei verbunden."); return; }
+        await loadFromFile();
+      } catch (e) {
+        console.error(e);
+        alert("Konnte Datei nicht laden. Evtl. Berechtigung weg – dann bitte erneut verbinden.");
+        setPill("⚠️ Nicht verbunden", "warn");
+      }
+    });
+
+    toggleEditBtn.addEventListener("click", () => {
+      editMode = !editMode;
+      renderAll();
+    });
+
+    addTaskBtn.addEventListener("click", () => {
+      const room = roomSelect.value;
+      const text = newTaskText.value.trim();
+      if (!text) return;
+
+      data.tasks = data.tasks || [];
+      data.tasks.push({ id: generateId(room), room, text, done: false });
+      newTaskText.value = "";
+      newTaskText.focus();
+      scheduleSave();
+      renderAll();
+    });
+
+    newTaskText.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") addTaskBtn.click();
+    });
+
+    resetAllBtn.addEventListener("click", () => {
+      (data.tasks || []).forEach(t => t.done = false);
+      scheduleSave();
+      renderAll();
+    });
+
+    /* ======================
+       8) Init: Handle wiederfinden
+       ====================== */
+
+    async function init() {
+      renderRoomSelect();
+      renderAll();
+
+      // Hinweisstatus
+      if (!fsSupported()) {
+        setPill("⚠️ Datei-API evtl. nicht verfügbar (HTTPS/localhost + Chrome/Edge)", "warn");
+      }
+
+      try {
+        const handle = await idbGet(DB_KEY);
+        if (handle) {
+          const ok = await verifyPermission(handle, true);
+          if (ok) {
+            fileHandle = handle;
+            setPill(`✅ Verbunden: ${fileHandle.name}`, "ok");
+            await loadFromFile();
+          } else {
+            setPill("🔌 Nicht verbunden (Berechtigung fehlt – bitte neu verbinden)", "warn");
+          }
+        } else {
+          setPill("🔌 Nicht verbunden", "warn");
+        }
+      } catch (e) {
+        console.error(e);
+        setPill("🔌 Nicht verbunden", "warn");
+      }
+
+      // Wenn du die App über Nacht offen lässt: beim Zurückkehren Tages-Reset anwenden + speichern
+      window.addEventListener("focus", () => {
+        applyDailyResetIfNeeded();
+        renderAll();
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
